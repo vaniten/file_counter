@@ -1,70 +1,39 @@
 import os
-import sys
 import csv
-from collections import defaultdict
-import PyPDF2
+import sys
+from PyPDF2 import PdfReader
 import docx
-import pandas as pd
+import xlrd
 from pptx import Presentation
+from openpyxl import load_workbook
+from prettytable import PrettyTable
 
-def usage():
-    print("Usage: python count_files_by_type.py <directory_to_search> [output_file]")
-    sys.exit(1)
-
-def count_pdf_pages(file_path):
+def count_pages_pdf(file_path):
     try:
-        with open(file_path, 'rb') as f:
-            pdf = PyPDF2.PdfFileReader(f)
-            return pdf.getNumPages()
+        reader = PdfReader(file_path)
+        return len(reader.pages)
     except Exception as e:
         print(f"Error reading PDF {file_path}: {e}")
         return 0
 
-def count_doc_pages(file_path):
+def count_pages_doc(file_path):
     try:
-        import subprocess
-        result = subprocess.run(['antiword', '-m', '8859-1', file_path], stdout=subprocess.PIPE)
-        return len(result.stdout.decode('utf-8').splitlines())
+        with open(file_path, 'rb') as f:
+            data = f.read()
+            return data.count(b'\f') + 1
     except Exception as e:
         print(f"Error reading DOC {file_path}: {e}")
         return 0
 
-def count_docx_pages(file_path):
+def count_pages_docx(file_path):
     try:
         doc = docx.Document(file_path)
-        return len(doc.paragraphs)
+        return len(doc.element.xpath('//w:sectPr'))
     except Exception as e:
         print(f"Error reading DOCX {file_path}: {e}")
         return 0
 
-def count_xlsx_rows_columns(file_path):
-    try:
-        df = pd.read_excel(file_path)
-        return df.shape
-    except Exception as e:
-        print(f"Error reading XLSX {file_path}: {e}")
-        return 0, 0
-
-def count_xls_rows_columns(file_path):
-    try:
-        df = pd.read_excel(file_path, engine='xlrd')
-        return df.shape
-    except Exception as e:
-        print(f"Error reading XLS {file_path}: {e}")
-        return 0, 0
-
-def count_ppt_slides(file_path):
-    try:
-        import subprocess
-        result = subprocess.run(['pptinfo', file_path], stdout=subprocess.PIPE)
-        for line in result.stdout.decode('utf-8').splitlines():
-            if line.startswith("Pages:"):
-                return int(line.split()[1])
-    except Exception as e:
-        print(f"Error reading PPT {file_path}: {e}")
-    return 0
-
-def count_pptx_slides(file_path):
+def count_pages_pptx(file_path):
     try:
         prs = Presentation(file_path)
         return len(prs.slides)
@@ -72,91 +41,98 @@ def count_pptx_slides(file_path):
         print(f"Error reading PPTX {file_path}: {e}")
         return 0
 
-def main():
-    if len(sys.argv) < 2:
-        usage()
+def count_rows_columns_xls(file_path):
+    try:
+        workbook = xlrd.open_workbook(file_path)
+        total_rows = 0
+        total_columns = 0
+        for sheet in workbook.sheets():
+            total_rows += sheet.nrows
+            total_columns += sheet.ncols
+        return total_rows, total_columns
+    except Exception as e:
+        print(f"Error reading XLS {file_path}: {e}")
+        return 0, 0
 
-    target_dir = sys.argv[1]
+def count_rows_columns_xlsx(file_path):
+    try:
+        workbook = load_workbook(filename=file_path, read_only=True)
+        total_rows = 0
+        total_columns = 0
+        for sheet in workbook:
+            max_row = sheet.max_row or 0
+            max_column = sheet.max_column or 0
+            total_rows += max_row
+            total_columns += max_column
+        return total_rows, total_columns
+    except Exception as e:
+        print(f"Error reading XLSX {file_path}: {e}")
+        return 0, 0
 
-    if not os.path.isdir(target_dir):
-        print(f"Error: Directory '{target_dir}' does not exist.")
-        sys.exit(1)
+def main(directory, output_file="output.csv"):
+    file_counts = {}
+    file_sizes = {}
+    total_pages = {"pdf": 0, "doc": 0, "docx": 0, "pptx": 0}
+    total_rows = {"xls": 0, "xlsx": 0}
+    total_columns = {"xls": 0, "xlsx": 0}
 
-    if len(sys.argv) >= 3:
-        output_file = sys.argv[2]
-    else:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        output_file = os.path.join(script_dir, 'output.csv')
-
-    file_types = defaultdict(int)
-    file_sizes = defaultdict(int)
-    total_pages = 0
-    total_rows = 0
-    total_columns = 0
-    total_slides = 0
-
-    for root, _, files in os.walk(target_dir):
+    for root, _, files in os.walk(directory):
         for file in files:
+            ext = file.split('.')[-1].lower()
             file_path = os.path.join(root, file)
-            extension = os.path.splitext(file)[1][1:].lower()
             file_size = os.path.getsize(file_path)
-            file_sizes[extension] += file_size
+            file_counts[ext] = file_counts.get(ext, 0) + 1
+            file_sizes[ext] = file_sizes.get(ext, 0) + file_size
 
-            if extension:
-                file_types[extension] += 1
-            else:
-                file_types['no_extension'] += 1
+            if ext == "pdf":
+                total_pages["pdf"] += count_pages_pdf(file_path)
+            elif ext == "doc":
+                total_pages["doc"] += count_pages_doc(file_path)
+            elif ext == "docx":
+                total_pages["docx"] += count_pages_docx(file_path)
+            elif ext == "pptx":
+                total_pages["pptx"] += count_pages_pptx(file_path)
+            elif ext == "xls":
+                rows, columns = count_rows_columns_xls(file_path)
+                total_rows["xls"] += rows
+                total_columns["xls"] += columns
+            elif ext == "xlsx":
+                rows, columns = count_rows_columns_xlsx(file_path)
+                total_rows["xlsx"] += rows
+                total_columns["xlsx"] += columns
 
-            # Calculate total pages for PDF, DOC, DOCX
-            if extension == 'pdf':
-                total_pages += count_pdf_pages(file_path)
-            elif extension == 'doc':
-                total_pages += count_doc_pages(file_path)
-            elif extension == 'docx':
-                total_pages += count_docx_pages(file_path)
+    rows = []
+    for ext in file_counts:
+        if ext in total_pages:
+            rows.append([ext, file_counts[ext], file_sizes[ext], total_pages[ext], "", ""])
+        elif ext in total_rows:
+            rows.append([ext, file_counts[ext], file_sizes[ext], "", total_rows[ext], total_columns[ext]])
+        else:
+            rows.append([ext, file_counts[ext], file_sizes[ext], "", "", ""])
 
-            # Calculate total rows and columns for XLS, XLSX
-            elif extension == 'xls':
-                rows, columns = count_xls_rows_columns(file_path)
-                total_rows += rows
-                total_columns += columns
-            elif extension == 'xlsx':
-                rows, columns = count_xlsx_rows_columns(file_path)
-                total_rows += rows
-                total_columns += columns
+    # Sort rows by total pages (descending) and then alphabetically by file type
+    rows.sort(key=lambda x: (-x[3] if x[3] else 0, x[0]))
 
-            # Calculate total slides for PPT, PPTX
-            elif extension == 'ppt':
-                total_slides += count_ppt_slides(file_path)
-            elif extension == 'pptx':
-                total_slides += count_pptx_slides(file_path)
+    table = PrettyTable()
+    table.field_names = ["File Type", "Count", "Total Size (bytes)", "Total Pages", "Total Rows", "Total Columns"]
 
-    # Output the results to the CLI
-    print("File Type Counts:")
-    for ext, count in file_types.items():
-        print(f"{ext}: {count}")
+    for row in rows:
+        table.add_row(row)
 
-    print("Total File Sizes:")
-    for ext, size in file_sizes.items():
-        print(f"{ext}: {size} bytes")
+    print(table)
 
-    print(f"Total number of pages (pdf, doc, docx): {total_pages}")
-    print(f"Total number of rows (xls, xlsx): {total_rows}")
-    print(f"Total number of columns (xls, xlsx): {total_columns}")
-    print(f"Total number of slides (ppt, pptx): {total_slides}")
+    with open(output_file, mode='w', newline='') as csv_file:
+        writer = csv.writer(csv_file)
+        writer.writerow(["File Type", "Count", "Total Size (bytes)", "Total Pages", "Total Rows", "Total Columns"])
 
-    # Write the results to the CSV file
-    with open(output_file, 'w', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(["File Type", "Count", "Total Size (bytes)"])
-        for ext, count in file_types.items():
-            writer.writerow([ext, count, file_sizes[ext]])
-        writer.writerow(["Total Pages (pdf, doc, docx)", total_pages])
-        writer.writerow(["Total Rows (xls, xlsx)", total_rows])
-        writer.writerow(["Total Columns (xls, xlsx)", total_columns])
-        writer.writerow(["Total Slides (ppt, pptx)", total_slides])
-
-    print(f"Results have been written to {output_file}")
+        for row in rows:
+            writer.writerow(row)
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) < 2:
+        print("Usage: python script.py <directory_to_search> [output_file]")
+        sys.exit(1)
+
+    directory_to_search = sys.argv[1]
+    output_file_path = sys.argv[2] if len(sys.argv) > 2 else "output.csv"
+    main(directory_to_search, output_file_path)
