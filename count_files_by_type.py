@@ -21,7 +21,7 @@ def count_pages_doc(file_path):
     try:
         with open(file_path, 'rb') as f:
             data = f.read()
-            return data.count(b'\f') + 1
+            return data.count(b'\f') + 1    # Using form feed as page indicator
     except Exception as e:
         print(f"Error reading DOC {file_path}: {e}")
         return 0
@@ -29,7 +29,7 @@ def count_pages_doc(file_path):
 def count_pages_docx(file_path):
     try:
         doc = docx.Document(file_path)
-        return len(doc.element.xpath('//w:sectPr'))
+        return len(doc.element.xpath('//w:sectPr'))     # section properties in .docx typcially indicate page breaks 
     except Exception as e:
         print(f"Error reading DOCX {file_path}: {e}")
         return 0
