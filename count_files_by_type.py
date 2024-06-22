@@ -226,13 +226,14 @@ def main(directory, output_file="output.csv"):
 
             totals_row = ["TOTALS", year, total_count, total_size, total_pages, total_rows, total_columns]
             writer.writerow(totals_row)
-
+    print("\nFile Count Summary:")
     print(summary_table)
 
     page_range_table = PrettyTable()
     page_range_table.field_names = ["File Type", "1-2 Pages", "3-5 Pages", ">5 Pages"]
     for ext, ranges in page_ranges.items():
         page_range_table.add_row([ext, ranges['1-2'], ranges['3-5'], ranges['>5']])
+    print("\nPage Range Summary:")
     print(page_range_table)
 
     for year in sorted(rows_by_year.keys(), reverse=True):
