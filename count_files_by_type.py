@@ -70,13 +70,13 @@ def count_rows_columns_xlsx(file_path):
         print(f"Error reading XLSX {file_path}: {e}")
         return 0, 0
 
-def update_page_ranges(page_ranges, ext, pages):
+def update_page_ranges(page_ranges, pages):
     if pages <= 2:
-        page_ranges[ext]['1-2'] += 1
+        page_ranges['1-2'] += 1
     elif pages <= 5:
-        page_ranges[ext]['3-5'] += 1
+        page_ranges['3-5'] += 1
     else:
-        page_ranges[ext]['>5'] += 1
+        page_ranges['>5'] += 1
 
 def main(directory, output_file="output.csv"):
     file_counts = {}
@@ -90,6 +90,7 @@ def main(directory, output_file="output.csv"):
         'docx': {'1-2': 0, '3-5': 0, '>5': 0},
         'pptx': {'1-2': 0, '3-5': 0, '>5': 0}
     }
+    page_ranges_by_year = {}
 
     files_to_process = []
     for root, _, files in os.walk(directory):
@@ -118,6 +119,8 @@ def main(directory, output_file="output.csv"):
             total_pages.setdefault((ext, year), 0)
             total_rows.setdefault((ext, year), 0)
             total_columns.setdefault((ext, year), 0)
+            if (ext, year) not in page_ranges_by_year:
+                page_ranges_by_year[(ext, year)] = {'1-2': 0, '3-5': 0, '>5': 0}
 
             file_counts[(ext, year)] += 1
             file_sizes[(ext, year)] += file_size
@@ -134,8 +137,9 @@ def main(directory, output_file="output.csv"):
 
             if pages > 0:
                 total_pages[(ext, year)] += pages
+                update_page_ranges(page_ranges_by_year[(ext, year)], pages)
                 if ext in page_ranges:
-                    update_page_ranges(page_ranges, ext, pages)
+                    update_page_ranges(page_ranges[ext], pages)
 
             if ext == "xls":
                 rows, columns = count_rows_columns_xls(file_path)
@@ -148,7 +152,12 @@ def main(directory, output_file="output.csv"):
 
     rows = []
     for (ext, year), count in file_counts.items():
-        row = [ext, year, count, file_sizes[(ext, year)], total_pages.get((ext, year), 0), total_rows.get((ext, year), 0), total_columns.get((ext, year), 0)]
+        page_range = page_ranges_by_year.get((ext, year), {'1-2': 0, '3-5': 0, '>5': 0})
+        row = [
+            ext, year, count, file_sizes[(ext, year)], total_pages.get((ext, year), 0),
+            total_rows.get((ext, year), 0), total_columns.get((ext, year), 0),
+            page_range['1-2'], page_range['3-5'], page_range['>5']
+        ]
         rows.append(row)
 
     # Group rows by year and sort by count within each year (descending)
@@ -168,97 +177,95 @@ def main(directory, output_file="output.csv"):
     total_summary_pages = 0
     total_summary_rows = 0
     total_summary_columns = 0
+    total_summary_1_2_pages = 0
+    total_summary_3_5_pages = 0
+    total_summary_more_than_5_pages = 0
 
     for year in rows_by_year:
         for row in rows_by_year[year]:
             ext = row[0]
-            summary_totals.setdefault(ext, {"count": 0, "size": 0, "pages": 0, "rows": 0, "columns": 0})
+            summary_totals.setdefault(ext, {"count": 0, "size": 0, "pages": 0, "rows": 0, "columns": 0, "1-2": 0, "3-5": 0, ">5": 0})
             summary_totals[ext]["count"] += row[2]
             summary_totals[ext]["size"] += row[3]
             summary_totals[ext]["pages"] += row[4]
             summary_totals[ext]["rows"] += row[5]
             summary_totals[ext]["columns"] += row[6]
+            summary_totals[ext]["1-2"] += row[7]
+            summary_totals[ext]["3-5"] += row[8]
+            summary_totals[ext][">5"] += row[9]
             total_summary_count += row[2]
             total_summary_size += row[3]
             total_summary_pages += row[4]
             total_summary_rows += row[5]
             total_summary_columns += row[6]
+            total_summary_1_2_pages += row[7]
+            total_summary_3_5_pages += row[8]
+            total_summary_more_than_5_pages += row[9]
 
     summary_table = PrettyTable()
-    summary_table.field_names = ["File Type", "Count", "Total Size (bytes)", "Total Pages", "Total Rows", "Total Columns"]
+    summary_table.field_names = ["File Type", "Count", "Total Size (bytes)", "Total Pages", "Total Rows", "Total Columns", "1-2 Pages", "3-5 Pages", ">5 Pages"]
 
     with open(output_file, mode='w', newline='') as csv_file:
         writer = csv.writer(csv_file)
         writer.writerow(["Summary Totals"])
-        writer.writerow(["File Type", "Count", "Total Size (bytes)", "Total Pages", "Total Rows", "Total Columns"])
+        writer.writerow(["File Type", "Count", "Total Size (bytes)", "Total Pages", "Total Rows", "Total Columns", "1-2 Pages", "3-5 Pages", ">5 Pages"])
 
         for ext, totals in summary_totals.items():
-            row = [ext, totals["count"], totals["size"], totals["pages"], totals["rows"], totals["columns"]]
+            row = [ext, totals["count"], totals["size"], totals["pages"], totals["rows"], totals["columns"], totals["1-2"], totals["3-5"], totals[">5"]]
             summary_table.add_row(row)
             writer.writerow(row)
 
-        totals_row = ["TOTALS", total_summary_count, total_summary_size, total_summary_pages, total_summary_rows, total_summary_columns]
+        totals_row = ["TOTALS", total_summary_count, total_summary_size, total_summary_pages, total_summary_rows, total_summary_columns, total_summary_1_2_pages, total_summary_3_5_pages, total_summary_more_than_5_pages]
         summary_table.add_row(totals_row)
         writer.writerow(totals_row)
+
+        print("\nSummary Table:")
+        print(summary_table)
 
         writer.writerow([])
         writer.writerow(["Page Range Summary"])
         writer.writerow(["File Type", "1-2 Pages", "3-5 Pages", ">5 Pages"])
+        page_range_table = PrettyTable()
+        page_range_table.field_names = ["File Type", "1-2 Pages", "3-5 Pages", ">5 Pages"]
         for ext, ranges in page_ranges.items():
+            page_range_table.add_row([ext, ranges['1-2'], ranges['3-5'], ranges['>5']])
             writer.writerow([ext, ranges['1-2'], ranges['3-5'], ranges['>5']])
+        print("\nPage Range Table:")
+        print(page_range_table)
 
-        writer.writerow([])
-        writer.writerow(["File Type", "Year", "Count", "Total Size (bytes)", "Total Pages", "Total Rows", "Total Columns"])
-        for year in sorted(rows_by_year.keys(), reverse=True):  # Sort years descending
+        for year in sorted(rows_by_year.keys(), reverse=True):
+            writer.writerow([])
+            writer.writerow([f"Year: {year}"])
+            table = PrettyTable()
+            table.field_names = ["File Type", "Year", "Count", "Total Size (bytes)", "Total Pages", "Total Rows", "Total Columns", "1-2 Pages", "3-5 Pages", ">5 Pages"]
+
             total_count = 0
             total_size = 0
             total_pages = 0
             total_rows = 0
             total_columns = 0
+            total_1_2_pages = 0
+            total_3_5_pages = 0
+            total_more_than_5_pages = 0
 
             for row in rows_by_year[year]:
+                table.add_row(row)
                 writer.writerow(row)
                 total_count += row[2]
                 total_size += row[3]
                 total_pages += row[4]
                 total_rows += row[5]
                 total_columns += row[6]
+                total_1_2_pages += row[7]
+                total_3_5_pages += row[8]
+                total_more_than_5_pages += row[9]
 
-            totals_row = ["TOTALS", year, total_count, total_size, total_pages, total_rows, total_columns]
+            totals_row = ["TOTALS", year, total_count, total_size, total_pages, total_rows, total_columns, total_1_2_pages, total_3_5_pages, total_more_than_5_pages]
+            table.add_row(totals_row)
             writer.writerow(totals_row)
-    print("\nFile Count Summary:")
-    print(summary_table)
 
-    page_range_table = PrettyTable()
-    page_range_table.field_names = ["File Type", "1-2 Pages", "3-5 Pages", ">5 Pages"]
-    for ext, ranges in page_ranges.items():
-        page_range_table.add_row([ext, ranges['1-2'], ranges['3-5'], ranges['>5']])
-    print("\nPage Range Summary:")
-    print(page_range_table)
-
-    for year in sorted(rows_by_year.keys(), reverse=True):
-        table = PrettyTable()
-        table.field_names = ["File Type", "Year", "Count", "Total Size (bytes)", "Total Pages", "Total Rows", "Total Columns"]
-
-        total_count = 0
-        total_size = 0
-        total_pages = 0
-        total_rows = 0
-        total_columns = 0
-
-        for row in rows_by_year[year]:
-            table.add_row(row)
-            total_count += row[2]
-            total_size += row[3]
-            total_pages += row[4]
-            total_rows += row[5]
-            total_columns += row[6]
-
-        totals_row = ["TOTALS", year, total_count, total_size, total_pages, total_rows, total_columns]
-        table.add_row(totals_row)
-
-        print(f"\nYear: {year}")
-        print(table)
+            print(f"\nYear: {year}")
+            print(table)
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
