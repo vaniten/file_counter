@@ -1,7 +1,7 @@
 import os
 import csv
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from PyPDF2 import PdfReader
 import docx
 import xlrd
@@ -79,6 +79,8 @@ def update_page_ranges(page_ranges, pages):
         page_ranges['>5'] += 1
 
 def main(directory, output_file="output.csv"):
+    start_time = datetime.now()
+
     file_counts = {}
     file_sizes = {}
     total_pages = {}
@@ -202,6 +204,9 @@ def main(directory, output_file="output.csv"):
             total_summary_3_5_pages += row[8]
             total_summary_more_than_5_pages += row[9]
 
+    # Create summary table sorted by count descending
+    sorted_summary_totals = sorted(summary_totals.items(), key=lambda item: -item[1]['count'])
+
     summary_table = PrettyTable()
     summary_table.field_names = ["File Type", "Count", "Total Size (bytes)", "Total Pages", "Total Rows", "Total Columns", "1-2 Pages", "3-5 Pages", ">5 Pages"]
 
@@ -210,62 +215,87 @@ def main(directory, output_file="output.csv"):
         writer.writerow(["Summary Totals"])
         writer.writerow(["File Type", "Count", "Total Size (bytes)", "Total Pages", "Total Rows", "Total Columns", "1-2 Pages", "3-5 Pages", ">5 Pages"])
 
-        for ext, totals in summary_totals.items():
-            row = [ext, totals["count"], totals["size"], totals["pages"], totals["rows"], totals["columns"], totals["1-2"], totals["3-5"], totals[">5"]]
+        for ext, totals in sorted_summary_totals:
+            row = [
+                ext, totals["count"], totals["size"], totals["pages"],
+                totals["rows"], totals["columns"], totals["1-2"], totals["3-5"], totals[">5"]
+            ]
             summary_table.add_row(row)
             writer.writerow(row)
 
-        totals_row = ["TOTALS", total_summary_count, total_summary_size, total_summary_pages, total_summary_rows, total_summary_columns, total_summary_1_2_pages, total_summary_3_5_pages, total_summary_more_than_5_pages]
-        summary_table.add_row(totals_row)
-        writer.writerow(totals_row)
+        summary_table.add_row([
+            "TOTALS", total_summary_count, total_summary_size, total_summary_pages,
+            total_summary_rows, total_summary_columns, total_summary_1_2_pages,
+            total_summary_3_5_pages, total_summary_more_than_5_pages
+        ])
+        writer.writerow([
+            "TOTALS", total_summary_count, total_summary_size, total_summary_pages,
+            total_summary_rows, total_summary_columns, total_summary_1_2_pages,
+            total_summary_3_5_pages, total_summary_more_than_5_pages
+        ])
 
-        print("\nSummary Table:")
+        print("\n\nSummary Table:")
         print(summary_table)
+
+        # Write page range summary table
+        page_range_table = PrettyTable()
+        page_range_table.field_names = ["File Type", "1-2 Pages", "3-5 Pages", ">5 Pages"]
 
         writer.writerow([])
         writer.writerow(["Page Range Summary"])
         writer.writerow(["File Type", "1-2 Pages", "3-5 Pages", ">5 Pages"])
-        page_range_table = PrettyTable()
-        page_range_table.field_names = ["File Type", "1-2 Pages", "3-5 Pages", ">5 Pages"]
+
         for ext, ranges in page_ranges.items():
-            page_range_table.add_row([ext, ranges['1-2'], ranges['3-5'], ranges['>5']])
-            writer.writerow([ext, ranges['1-2'], ranges['3-5'], ranges['>5']])
+            row = [ext, ranges["1-2"], ranges["3-5"], ranges[">5"]]
+            page_range_table.add_row(row)
+            writer.writerow(row)
+
         print("\nPage Range Table:")
         print(page_range_table)
 
+        # Write detailed year tables
+        writer.writerow([])
         for year in sorted(rows_by_year.keys(), reverse=True):
-            writer.writerow([])
-            writer.writerow([f"Year: {year}"])
-            table = PrettyTable()
-            table.field_names = ["File Type", "Year", "Count", "Total Size (bytes)", "Total Pages", "Total Rows", "Total Columns", "1-2 Pages", "3-5 Pages", ">5 Pages"]
+            year_table = PrettyTable()
+            year_table.field_names = ["File Type", "Year", "Count", "Total Size (bytes)", "Total Pages", "Total Rows", "Total Columns", "1-2 Pages", "3-5 Pages", ">5 Pages"]
 
-            total_count = 0
-            total_size = 0
-            total_pages = 0
-            total_rows = 0
-            total_columns = 0
-            total_1_2_pages = 0
-            total_3_5_pages = 0
-            total_more_than_5_pages = 0
+            year_count = 0
+            year_size = 0
+            year_pages = 0
+            year_rows = 0
+            year_columns = 0
+            year_1_2_pages = 0
+            year_3_5_pages = 0
+            year_more_than_5_pages = 0
 
             for row in rows_by_year[year]:
-                table.add_row(row)
+                year_table.add_row(row)
                 writer.writerow(row)
-                total_count += row[2]
-                total_size += row[3]
-                total_pages += row[4]
-                total_rows += row[5]
-                total_columns += row[6]
-                total_1_2_pages += row[7]
-                total_3_5_pages += row[8]
-                total_more_than_5_pages += row[9]
+                year_count += row[2]
+                year_size += row[3]
+                year_pages += row[4]
+                year_rows += row[5]
+                year_columns += row[6]
+                year_1_2_pages += row[7]
+                year_3_5_pages += row[8]
+                year_more_than_5_pages += row[9]
 
-            totals_row = ["TOTALS", year, total_count, total_size, total_pages, total_rows, total_columns, total_1_2_pages, total_3_5_pages, total_more_than_5_pages]
-            table.add_row(totals_row)
-            writer.writerow(totals_row)
+            year_table.add_row([
+                "TOTALS", year, year_count, year_size, year_pages, year_rows, year_columns,
+                year_1_2_pages, year_3_5_pages, year_more_than_5_pages
+            ])
+            writer.writerow([
+                "TOTALS", year, year_count, year_size, year_pages, year_rows, year_columns,
+                year_1_2_pages, year_3_5_pages, year_more_than_5_pages
+            ])
 
-            print(f"\nYear: {year}")
-            print(table)
+            print(f"\nYear {year} Detail:")
+            print(year_table)
+
+
+    end_time = datetime.now()
+    duration = end_time - start_time
+    print(f"\nTotal runtime: {duration}")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
